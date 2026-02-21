@@ -1,3 +1,12 @@
+/*
+<form [formGroup]="form">
+  <app-color-picker formControlName="color"></app-color-picker>
+</form>
+
+form = new FormGroup({
+  color: new FormControl('rgba(255,0,0,1)')
+});
+*/
 import {
   Component,
   ElementRef,
