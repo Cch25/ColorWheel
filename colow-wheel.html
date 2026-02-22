@@ -20,6 +20,7 @@ body{
 canvas{
   border-radius:50%;
   cursor:crosshair;
+  touch-action:none; /* IMPORTANT for mobile drag */
 }
 
 .panel{
@@ -39,7 +40,6 @@ canvas{
 .values{
   margin-top:10px;
   font-size:14px;
-  cursor:pointer;
 }
 
 .slider{
@@ -88,10 +88,9 @@ const centerY=radius;
 
 let selector={x:centerX,y:centerY};
 let dragging=false;
+let baseColor={r:255,g:0,b:0};
 
-let baseColor={r:255,g:0,b:0}; // original picked color
-
-// Draw static wheel (HSL 50% lightness)
+// Draw color wheel
 function drawWheel(){
   const image=ctx.createImageData(size,size);
   const data=image.data;
@@ -133,7 +132,7 @@ function hslToRgb(h,s,l){
   ];
 }
 
-// Shade adjustment (darken/lighten)
+// Shade adjustment
 function adjustShade(color,amount){
   let r=color.r;
   let g=color.g;
@@ -141,9 +140,7 @@ function adjustShade(color,amount){
 
   if(amount<0){
     const factor=1+(amount/50);
-    r*=factor;
-    g*=factor;
-    b*=factor;
+    r*=factor; g*=factor; b*=factor;
   }else{
     r+=(255-r)*(amount/50);
     g+=(255-g)*(amount/50);
@@ -158,9 +155,9 @@ function adjustShade(color,amount){
 }
 
 function rgbToHex(r,g,b){
-  return "#"+[r,g,b].map(x=>
-    x.toString(16).padStart(2,"0")
-  ).join("");
+  return "#"+[r,g,b]
+    .map(x=>x.toString(16).padStart(2,"0"))
+    .join("");
 }
 
 function updatePreview(){
@@ -170,7 +167,6 @@ function updatePreview(){
   preview.style.background=hex;
   values.textContent=`HEX: ${hex} | RGB: (${shaded.r}, ${shaded.g}, ${shaded.b})`;
 
-  // slider gradient background
   slider.style.background=
     `linear-gradient(to right,
       black,
@@ -196,6 +192,7 @@ function clamp(x,y){
   const dx=x-centerX;
   const dy=y-centerY;
   const dist=Math.sqrt(dx*dx+dy*dy);
+
   if(dist>radius){
     const angle=Math.atan2(dy,dx);
     x=centerX+radius*Math.cos(angle);
@@ -204,25 +201,39 @@ function clamp(x,y){
   return {x,y};
 }
 
-canvas.addEventListener("mousedown",e=>{
-  dragging=true;
-  move(e);
-});
-canvas.addEventListener("mousemove",e=>{
-  if(dragging) move(e);
-});
-canvas.addEventListener("mouseup",()=>dragging=false);
-canvas.addEventListener("mouseleave",()=>dragging=false);
+/* ===== POINTER EVENTS (Desktop + Mobile) ===== */
 
-function move(e){
+canvas.addEventListener("pointerdown", e=>{
+  dragging=true;
+  canvas.setPointerCapture(e.pointerId);
+  movePointer(e);
+});
+
+canvas.addEventListener("pointermove", e=>{
+  if(dragging) movePointer(e);
+});
+
+canvas.addEventListener("pointerup", e=>{
+  dragging=false;
+  canvas.releasePointerCapture(e.pointerId);
+});
+
+canvas.addEventListener("pointercancel", ()=>dragging=false);
+canvas.addEventListener("pointerleave", ()=>dragging=false);
+
+function movePointer(e){
   const rect=canvas.getBoundingClientRect();
-  const pos=clamp(e.clientX-rect.left,e.clientY-rect.top);
+  const pos=clamp(
+    e.clientX-rect.left,
+    e.clientY-rect.top
+  );
+
   selector=pos;
 
   const pixel=ctx.getImageData(selector.x,selector.y,1,1).data;
   baseColor={r:pixel[0],g:pixel[1],b:pixel[2]};
 
-  slider.value=0; // reset shade when new color picked
+  slider.value=0;
   render();
 }
 
