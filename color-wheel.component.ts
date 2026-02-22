@@ -4,9 +4,10 @@
 </form>
 
 form = new FormGroup({
-  color: new FormControl('rgba(255,0,0,1)')
+  color: new FormControl('#ff0000')
 });
 */
+
 import {
   Component,
   ElementRef,
@@ -40,7 +41,7 @@ import {
         (pointerleave)="stopDrag()"
       ></canvas>
 
-      <div class="preview" [style.background]="rgbaColor"></div>
+      <div class="preview" [style.background]="hexColor"></div>
 
       <input
         #shadeSlider
@@ -52,14 +53,7 @@ import {
         (input)="onShadeChange($event)"
       />
 
-      <input
-        type="range"
-        class="slider"
-        min="0"
-        max="100"
-        [value]="alpha * 100"
-        (input)="onAlphaChange($event)"
-      />
+      <div class="value">{{ hexColor }}</div>
     </div>
   `,
   styles: [`
@@ -79,6 +73,7 @@ import {
     canvas {
       border-radius: 50%;
       cursor: crosshair;
+      touch-action: none;
     }
 
     .preview {
@@ -106,6 +101,11 @@ import {
       border: 2px solid black;
       cursor: pointer;
     }
+
+    .value {
+      font-size: 14px;
+      font-weight: bold;
+    }
   `]
 })
 export class ColorPickerComponent
@@ -128,13 +128,8 @@ export class ColorPickerComponent
   selector = { x: 150, y: 150 };
   dragging = false;
 
-  // Base color (from wheel only)
   baseColor = { r: 255, g: 0, b: 0 };
-
-  // Sliders
-  shade = 0; // -50 → 50
-  alpha = 1;
-
+  shade = 0;
   disabled = false;
 
   private onChange: any = () => {};
@@ -144,7 +139,7 @@ export class ColorPickerComponent
 
   ngAfterViewInit() {
     this.setupCanvas();
-    this.generateWheel(); // render wheel ONCE
+    this.generateWheel();
     this.render();
     this.updateSliderBackground();
   }
@@ -161,14 +156,13 @@ export class ColorPickerComponent
 
     this.ctx = canvas.getContext('2d')!;
 
-    // Offscreen buffer (performance optimization)
     this.offscreen = document.createElement('canvas');
     this.offscreen.width = this.size;
     this.offscreen.height = this.size;
     this.offCtx = this.offscreen.getContext('2d')!;
   }
 
-  // ---------------- WHEEL GENERATION (ONCE) ----------------
+  // ---------------- WHEEL (DRAW ONCE) ----------------
 
   generateWheel() {
     const image = this.offCtx.createImageData(this.size, this.size);
@@ -304,13 +298,6 @@ export class ColorPickerComponent
       `linear-gradient(to right, black, rgb(${r},${g},${b}), white)`;
   }
 
-  // ---------------- ALPHA ----------------
-
-  onAlphaChange(event: any) {
-    this.alpha = parseInt(event.target.value, 10) / 100;
-    this.emitValue();
-  }
-
   // ---------------- COLOR UTILS ----------------
 
   hslToRgb(h: number, s: number, l: number): number[] {
@@ -329,21 +316,17 @@ export class ColorPickerComponent
     ];
   }
 
+  rgbToHex(r: number, g: number, b: number): string {
+    return '#' + [r, g, b]
+      .map(x => x.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
   // ---------------- CONTROL VALUE ACCESSOR ----------------
 
   writeValue(value: string): void {
-    if (!value) return;
-
-    const match = value.match(/rgba?\(([^)]+)\)/);
-    if (!match) return;
-
-    const parts = match[1].split(',').map(v => parseFloat(v));
-    const [r, g, b, a] = parts;
-
-    this.baseColor = { r, g, b };
-    this.alpha = a ?? 1;
-
-    this.updateSliderBackground();
+    if (!value || !value.startsWith('#')) return;
+    // Only preview update (no reverse wheel mapping)
   }
 
   registerOnChange(fn: any): void { this.onChange = fn; }
@@ -351,11 +334,11 @@ export class ColorPickerComponent
   setDisabledState(isDisabled: boolean): void { this.disabled = isDisabled; }
 
   emitValue() {
-    this.onChange(this.rgbaColor);
+    this.onChange(this.hexColor);
   }
 
-  get rgbaColor(): string {
+  get hexColor(): string {
     const shaded = this.adjustShade(this.shade);
-    return `rgba(${shaded.r},${shaded.g},${shaded.b},${this.alpha})`;
+    return this.rgbToHex(shaded.r, shaded.g, shaded.b);
   }
 }
