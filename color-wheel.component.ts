@@ -23,21 +23,99 @@ import {
 @Component({
   selector: 'app-color-picker',
   standalone: true,
-  templateUrl: './color-picker.component.html',
-  styleUrls: ['./color-picker.component.css'],
   providers: [
     {
       provide: NG_VALUE_ACCESSOR,
       useExisting: forwardRef(() => ColorPickerComponent),
       multi: true
     }
-  ]
+  ],
+  template: `
+    <div class="wrapper">
+      <canvas
+        #canvas
+        (pointerdown)="startDrag($event)"
+        (pointermove)="onDrag($event)"
+        (pointerup)="stopDrag()"
+        (pointerleave)="stopDrag()"
+      ></canvas>
+
+      <div class="preview" [style.background]="rgbaColor"></div>
+
+      <input
+        #shadeSlider
+        type="range"
+        class="slider"
+        min="-50"
+        max="50"
+        [value]="shade"
+        (input)="onShadeChange($event)"
+      />
+
+      <input
+        type="range"
+        class="slider"
+        min="0"
+        max="100"
+        [value]="alpha * 100"
+        (input)="onAlphaChange($event)"
+      />
+    </div>
+  `,
+  styles: [`
+    :host {
+      display: flex;
+      justify-content: center;
+    }
+
+    .wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 320px;
+      gap: 12px;
+    }
+
+    canvas {
+      border-radius: 50%;
+      cursor: crosshair;
+    }
+
+    .preview {
+      width: 80px;
+      height: 80px;
+      border-radius: 16px;
+      border: 2px solid #fff;
+    }
+
+    .slider {
+      width: 100%;
+      appearance: none;
+      height: 12px;
+      border-radius: 10px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .slider::-webkit-slider-thumb {
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: white;
+      border: 2px solid black;
+      cursor: pointer;
+    }
+  `]
 })
 export class ColorPickerComponent
   implements AfterViewInit, ControlValueAccessor {
 
   @ViewChild('canvas', { static: true })
   canvasRef!: ElementRef<HTMLCanvasElement>;
+
+  @ViewChild('shadeSlider', { static: true })
+  shadeSliderRef!: ElementRef<HTMLInputElement>;
 
   ctx!: CanvasRenderingContext2D;
   offscreen!: HTMLCanvasElement;
@@ -48,64 +126,28 @@ export class ColorPickerComponent
   center = 150;
 
   selector = { x: 150, y: 150 };
+  dragging = false;
 
-  h = 0;
-  s = 0;
-  l = 50;
-  a = 1;
+  // Base color (from wheel only)
+  baseColor = { r: 255, g: 0, b: 0 };
+
+  // Sliders
+  shade = 0; // -50 → 50
+  alpha = 1;
 
   disabled = false;
 
-  // ControlValueAccessor hooks
   private onChange: any = () => {};
   private onTouched: any = () => {};
 
+  // ---------------- INIT ----------------
+
   ngAfterViewInit() {
     this.setupCanvas();
-    this.generateWheel();
+    this.generateWheel(); // render wheel ONCE
     this.render();
+    this.updateSliderBackground();
   }
-
-  // --- ControlValueAccessor API ---
-
-  writeValue(value: string): void {
-    if (!value) return;
-
-    const match = value.match(/rgba?\(([^)]+)\)/);
-    if (!match) return;
-
-    const parts = match[1].split(',').map(v => parseFloat(v));
-    const [r, g, b, alpha] = parts;
-
-    this.a = alpha ?? 1;
-
-    // convert RGB → HSL
-    const { h, s, l } = this.rgbToHsl(r, g, b);
-    this.h = h;
-    this.s = s;
-    this.l = l;
-
-    this.updateSelectorFromHsl();
-    this.render();
-  }
-
-  registerOnChange(fn: any): void {
-    this.onChange = fn;
-  }
-
-  registerOnTouched(fn: any): void {
-    this.onTouched = fn;
-  }
-
-  setDisabledState(isDisabled: boolean): void {
-    this.disabled = isDisabled;
-  }
-
-  emitValue() {
-    this.onChange(this.rgbaColor);
-  }
-
-  // --- Canvas Setup ---
 
   setupCanvas() {
     const canvas = this.canvasRef.nativeElement;
@@ -119,11 +161,14 @@ export class ColorPickerComponent
 
     this.ctx = canvas.getContext('2d')!;
 
+    // Offscreen buffer (performance optimization)
     this.offscreen = document.createElement('canvas');
     this.offscreen.width = this.size;
     this.offscreen.height = this.size;
     this.offCtx = this.offscreen.getContext('2d')!;
   }
+
+  // ---------------- WHEEL GENERATION (ONCE) ----------------
 
   generateWheel() {
     const image = this.offCtx.createImageData(this.size, this.size);
@@ -137,7 +182,6 @@ export class ColorPickerComponent
         const distance = Math.sqrt(dx * dx + dy * dy);
 
         if (distance <= this.radius) {
-
           const angle = Math.atan2(dy, dx);
           const hue = (angle * 180 / Math.PI + 360) % 360;
           const saturation = (distance / this.radius) * 100;
@@ -170,9 +214,24 @@ export class ColorPickerComponent
     this.ctx.stroke();
   }
 
-  handlePointer(event: PointerEvent) {
-    if (this.disabled) return;
+  // ---------------- POINTER ----------------
 
+  startDrag(event: PointerEvent) {
+    if (this.disabled) return;
+    this.dragging = true;
+    this.handlePointer(event);
+  }
+
+  onDrag(event: PointerEvent) {
+    if (!this.dragging) return;
+    this.handlePointer(event);
+  }
+
+  stopDrag() {
+    this.dragging = false;
+  }
+
+  handlePointer(event: PointerEvent) {
     const rect = this.canvasRef.nativeElement.getBoundingClientRect();
 
     let x = event.clientX - rect.left;
@@ -189,29 +248,70 @@ export class ColorPickerComponent
     }
 
     this.selector = { x, y };
-    this.updateColorFromSelector();
-    this.emitValue();
+    this.updateBaseColorFromSelector();
     this.render();
+    this.emitValue();
   }
 
-  updateColorFromSelector() {
+  updateBaseColorFromSelector() {
     const dx = this.selector.x - this.center;
     const dy = this.selector.y - this.center;
 
     const distance = Math.sqrt(dx * dx + dy * dy);
     const angle = Math.atan2(dy, dx);
 
-    this.h = (angle * 180 / Math.PI + 360) % 360;
-    this.s = Math.min((distance / this.radius) * 100, 100);
+    const hue = (angle * 180 / Math.PI + 360) % 360;
+    const saturation = Math.min((distance / this.radius) * 100, 100);
+
+    const [r, g, b] = this.hslToRgb(hue, saturation, 50);
+
+    this.baseColor = { r, g, b };
+    this.shade = 0;
+
+    this.updateSliderBackground();
   }
 
-  updateSelectorFromHsl() {
-    const angle = this.h * Math.PI / 180;
-    const r = (this.s / 100) * this.radius;
+  // ---------------- SHADE ----------------
 
-    this.selector.x = this.center + r * Math.cos(angle);
-    this.selector.y = this.center + r * Math.sin(angle);
+  onShadeChange(event: any) {
+    this.shade = parseInt(event.target.value, 10);
+    this.emitValue();
   }
+
+  adjustShade(amount: number) {
+    let { r, g, b } = this.baseColor;
+
+    if (amount < 0) {
+      const factor = 1 + amount / 50;
+      r *= factor; g *= factor; b *= factor;
+    } else {
+      r += (255 - r) * (amount / 50);
+      g += (255 - g) * (amount / 50);
+      b += (255 - b) * (amount / 50);
+    }
+
+    return {
+      r: Math.round(r),
+      g: Math.round(g),
+      b: Math.round(b)
+    };
+  }
+
+  updateSliderBackground() {
+    const { r, g, b } = this.baseColor;
+
+    this.shadeSliderRef.nativeElement.style.background =
+      `linear-gradient(to right, black, rgb(${r},${g},${b}), white)`;
+  }
+
+  // ---------------- ALPHA ----------------
+
+  onAlphaChange(event: any) {
+    this.alpha = parseInt(event.target.value, 10) / 100;
+    this.emitValue();
+  }
+
+  // ---------------- COLOR UTILS ----------------
 
   hslToRgb(h: number, s: number, l: number): number[] {
     s /= 100;
@@ -229,32 +329,33 @@ export class ColorPickerComponent
     ];
   }
 
-  rgbToHsl(r: number, g: number, b: number) {
-    r /= 255; g /= 255; b /= 255;
+  // ---------------- CONTROL VALUE ACCESSOR ----------------
 
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    let h = 0, s = 0;
-    const l = (max + min) / 2;
+  writeValue(value: string): void {
+    if (!value) return;
 
-    if (max !== min) {
-      const d = max - min;
-      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    const match = value.match(/rgba?\(([^)]+)\)/);
+    if (!match) return;
 
-      switch (max) {
-        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-        case g: h = (b - r) / d + 2; break;
-        case b: h = (r - g) / d + 4; break;
-      }
+    const parts = match[1].split(',').map(v => parseFloat(v));
+    const [r, g, b, a] = parts;
 
-      h *= 60;
-    }
+    this.baseColor = { r, g, b };
+    this.alpha = a ?? 1;
 
-    return { h, s: s * 100, l: l * 100 };
+    this.updateSliderBackground();
+  }
+
+  registerOnChange(fn: any): void { this.onChange = fn; }
+  registerOnTouched(fn: any): void { this.onTouched = fn; }
+  setDisabledState(isDisabled: boolean): void { this.disabled = isDisabled; }
+
+  emitValue() {
+    this.onChange(this.rgbaColor);
   }
 
   get rgbaColor(): string {
-    const [r, g, b] = this.hslToRgb(this.h, this.s, this.l);
-    return `rgba(${r},${g},${b},${this.a})`;
+    const shaded = this.adjustShade(this.shade);
+    return `rgba(${shaded.r},${shaded.g},${shaded.b},${this.alpha})`;
   }
 }
