@@ -12,7 +12,6 @@
   --text:#ffffff;
   --muted:rgba(255,255,255,.55);
   --outline:rgba(255,255,255,.12);
-  --blue:#0a5aa6;
 }
 
 *{ box-sizing:border-box; }
@@ -37,22 +36,12 @@ body{
   border:1px solid var(--outline);
 }
 
-h1{
-  margin:4px 0 18px;
-  text-align:center;
-  font-size:28px;
-  font-weight:500;
-  color:var(--muted);
-  letter-spacing:.4px;
-}
-
 .wheelWrap{
   display:flex;
   justify-content:center;
-  margin:6px 0 20px;
+  margin:6px 0 16px;
 }
 
-/* Make the wheel BIG on mobile */
 canvas{
   width:min(82vw, 420px);
   height:min(82vw, 420px);
@@ -62,27 +51,30 @@ canvas{
   display:block;
 }
 
-/* Slider section */
-.sliderWrap{
-  position:relative;
+/* ── shared result swatch ── */
+.resultSwatch{
   width:100%;
-  padding-top:86px;       /* more space above slider */
-  margin:4px 0 12px;
+  height:64px;
+  border-radius:12px;
+  border:1.5px solid var(--outline);
+  margin-bottom:18px;
+  transition: background 0.08s linear;
 }
 
-.shadePreview{
-  width:70px;
-  height:70px;
-  border-radius:10px;
-  border:2px solid white;
-  position:absolute;
-  top:0;
-  left:0;
-  transform:translateX(-50%);
-  pointer-events:none;
+/* ── sliders ── */
+.sliderBlock{
+  margin: 0 0 14px;
 }
 
-/* Bigger slider for mobile */
+.sliderLabel{
+  font-size:12px;
+  color:var(--muted);
+  letter-spacing:.5px;
+  text-transform:uppercase;
+  margin-bottom:8px;
+  padding-left:2px;
+}
+
 .slider{
   width:100%;
   appearance:none;
@@ -90,6 +82,7 @@ canvas{
   border-radius:999px;
   outline:none;
   cursor:pointer;
+  background:black;
 }
 
 .slider::-webkit-slider-thumb{
@@ -103,40 +96,11 @@ canvas{
 }
 
 .values{
-  margin-top:10px;
+  margin-top:6px;
   text-align:center;
   font-size:14px;
   color:var(--muted);
   min-height:18px;
-}
-
-/* Buttons like screenshot */
-.actions{
-  margin-top:18px;
-  display:flex;
-  flex-direction:column;
-  gap:14px;
-}
-
-.btn{
-  width:100%;
-  border:none;
-  border-radius:14px;
-  padding:18px 16px;
-  font-size:20px;
-  font-weight:600;
-  cursor:pointer;
-}
-
-.btn.primary{
-  background:var(--blue);
-  color:white;
-}
-
-.btn.secondary{
-  background:transparent;
-  color:white;
-  border:1px solid var(--outline);
 }
 </style>
 </head>
@@ -144,266 +108,248 @@ canvas{
 <body>
 
 <div class="card">
-  <h1>Culori</h1>
 
   <div class="wheelWrap">
-    <!-- internal resolution is set by JS for sharpness; CSS controls display size -->
     <canvas id="wheel"></canvas>
   </div>
 
-  <div class="sliderWrap" id="sliderWrap">
-    <div class="shadePreview" id="shadePreview"></div>
+  <!-- Single shared result swatch -->
+  <div class="resultSwatch" id="resultSwatch"></div>
+
+  <!-- Shade Slider -->
+  <div class="sliderBlock">
+    <div class="sliderLabel">Shade</div>
     <input type="range" id="shadeSlider" class="slider" min="-50" max="50" value="0">
+  </div>
+
+  <!-- Saturation Slider -->
+  <div class="sliderBlock">
+    <div class="sliderLabel">Saturation</div>
+    <input type="range" id="satSlider" class="slider" min="0" max="100" value="100">
   </div>
 
   <div class="values" id="values">Click or drag</div>
 
-  <div class="actions">
-    <button class="btn primary" id="useBtn">Folosește culoarea</button>
-    <button class="btn secondary" id="cancelBtn">Renunță</button>
-  </div>
 </div>
 
 <script>
 document.addEventListener("DOMContentLoaded", () => {
-  const canvas = document.getElementById("wheel");
-  const ctx = canvas.getContext("2d");
-  const values = document.getElementById("values");
-  const slider = document.getElementById("shadeSlider");
-  const shadePreview = document.getElementById("shadePreview");
-  const sliderWrap = document.getElementById("sliderWrap");
 
-  // --- Responsive, sharp canvas (hi-DPI) ---
-  function setCanvasResolution() {
-    const cssSize = Math.min(window.innerWidth * 0.82, 420);
-    const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
-
-    canvas.style.width = cssSize + "px";
-    canvas.style.height = cssSize + "px";
-
-    canvas.width = Math.round(cssSize * dpr);
-    canvas.height = Math.round(cssSize * dpr);
-
-    return { cssSize, dpr };
-  }
+  const canvas       = document.getElementById("wheel");
+  const ctx          = canvas.getContext("2d");
+  const values       = document.getElementById("values");
+  const shadeSlider  = document.getElementById("shadeSlider");
+  const satSlider    = document.getElementById("satSlider");
+  const resultSwatch = document.getElementById("resultSwatch");
 
   let dragging = false;
   let baseColor = { r: 255, g: 0, b: 0 };
-  let selector = { x: 0, y: 0 };
+  let selector  = { x: 0, y: 0 };
+  let currentHue        = 0;
+  let currentSaturation = 1;
 
-  // Offscreen wheel for accurate picking
   const wheelCanvas = document.createElement("canvas");
-  const wheelCtx = wheelCanvas.getContext("2d", { willReadFrequently: true });
+  const wheelCtx    = wheelCanvas.getContext("2d", { willReadFrequently: true });
 
-  // HSV -> RGB
+  function setCanvasResolution() {
+    const cssSize = Math.min(window.innerWidth * 0.82, 420);
+    const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+    canvas.style.width  = cssSize + "px";
+    canvas.style.height = cssSize + "px";
+    canvas.width  = Math.round(cssSize * dpr);
+    canvas.height = Math.round(cssSize * dpr);
+  }
+
   function hsvToRgb(h, s, v) {
-    const c = v * s;
+    const c  = v * s;
     const hp = h / 60;
-    const x = c * (1 - Math.abs((hp % 2) - 1));
-
-    let r1 = 0, g1 = 0, b1 = 0;
-    if (0 <= hp && hp < 1) [r1, g1, b1] = [c, x, 0];
-    else if (1 <= hp && hp < 2) [r1, g1, b1] = [x, c, 0];
-    else if (2 <= hp && hp < 3) [r1, g1, b1] = [0, c, x];
-    else if (3 <= hp && hp < 4) [r1, g1, b1] = [0, x, c];
-    else if (4 <= hp && hp < 5) [r1, g1, b1] = [x, 0, c];
-    else if (5 <= hp && hp < 6) [r1, g1, b1] = [c, 0, x];
-
+    const x  = c * (1 - Math.abs((hp % 2) - 1));
+    let r1=0, g1=0, b1=0;
+    if      (0<=hp&&hp<1) [r1,g1,b1]=[c,x,0];
+    else if (1<=hp&&hp<2) [r1,g1,b1]=[x,c,0];
+    else if (2<=hp&&hp<3) [r1,g1,b1]=[0,c,x];
+    else if (3<=hp&&hp<4) [r1,g1,b1]=[0,x,c];
+    else if (4<=hp&&hp<5) [r1,g1,b1]=[x,0,c];
+    else if (5<=hp&&hp<6) [r1,g1,b1]=[c,0,x];
     const m = v - c;
     return [
-      Math.round((r1 + m) * 255),
-      Math.round((g1 + m) * 255),
-      Math.round((b1 + m) * 255)
+      Math.round((r1+m)*255),
+      Math.round((g1+m)*255),
+      Math.round((b1+m)*255)
     ];
   }
 
   function adjustShade(color, amount) {
-    let r = color.r, g = color.g, b = color.b;
+    let {r, g, b} = color;
     if (amount < 0) {
-      const factor = 1 + (amount / 50);
-      r *= factor; g *= factor; b *= factor;
+      const f = 1 + (amount / 50);
+      r*=f; g*=f; b*=f;
     } else {
-      r += (255 - r) * (amount / 50);
-      g += (255 - g) * (amount / 50);
-      b += (255 - b) * (amount / 50);
+      r += (255-r)*(amount/50);
+      g += (255-g)*(amount/50);
+      b += (255-b)*(amount/50);
     }
-    return { r: Math.round(r), g: Math.round(g), b: Math.round(b) };
+    return { r:Math.round(r), g:Math.round(g), b:Math.round(b) };
   }
 
-  function rgbToHex(r,g,b){
-    return "#"+[r,g,b].map(x=>x.toString(16).padStart(2,"0")).join("");
+  function rgbToHex(r, g, b) {
+    return "#" + [r,g,b].map(x => x.toString(16).padStart(2,"0")).join("");
   }
 
-  function drawWheelToOffscreen(sizePx) {
-    wheelCanvas.width = sizePx;
-    wheelCanvas.height = sizePx;
-
-    const radius = sizePx / 2;
-    const centerX = radius;
-    const centerY = radius;
-
-    const image = wheelCtx.createImageData(sizePx, sizePx);
-    const data = image.data;
-
-    for (let y = 0; y < sizePx; y++) {
-      for (let x = 0; x < sizePx; x++) {
-        const dx = x - centerX;
-        const dy = y - centerY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
+  function drawWheel(size) {
+    wheelCanvas.width  = size;
+    wheelCanvas.height = size;
+    const radius = size / 2;
+    const image  = wheelCtx.createImageData(size, size);
+    const data   = image.data;
+    for (let y=0; y<size; y++) {
+      for (let x=0; x<size; x++) {
+        const dx   = x - radius;
+        const dy   = y - radius;
+        const dist = Math.sqrt(dx*dx + dy*dy);
         if (dist <= radius) {
           const angle = Math.atan2(dy, dx);
-          // rotate by -90 degrees relative to the default angle mapping
-          const hue = ((angle * 180 / Math.PI) + 90 + 360) % 360;
-
-          const s = dist / radius; // 0..1
-          const v = 1;
-          const rgb = hsvToRgb(hue, s, v);
-
-          const i = (y * sizePx + x) * 4;
-          data[i] = rgb[0];
-          data[i + 1] = rgb[1];
-          data[i + 2] = rgb[2];
-          data[i + 3] = 255;
+          const hue   = ((angle*180/Math.PI) + 90 + 360) % 360;
+          const s     = dist / radius;
+          const rgb   = hsvToRgb(hue, s, 1);
+          const i     = (y*size + x) * 4;
+          data[i]   = rgb[0];
+          data[i+1] = rgb[1];
+          data[i+2] = rgb[2];
+          data[i+3] = 255;
         }
       }
     }
-
     wheelCtx.putImageData(image, 0, 0);
   }
 
-  function clampToWheel(x, y, sizePx) {
-    const radius = sizePx / 2;
-    const centerX = radius;
-    const centerY = radius;
-
-    const dx = x - centerX;
-    const dy = y - centerY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const maxR = radius - 1;
-
-    if (dist > maxR) {
-      const ang = Math.atan2(dy, dx);
-      x = centerX + maxR * Math.cos(ang);
-      y = centerY + maxR * Math.sin(ang);
-    }
-    return { x, y };
+  function updateSatSliderGradient() {
+    const fullRgb = hsvToRgb(currentHue, 1, 1);
+    satSlider.style.background =
+      `linear-gradient(to right,
+        rgb(128,128,128) 0%,
+        rgb(${fullRgb[0]},${fullRgb[1]},${fullRgb[2]}) 100%)`;
   }
 
-  function pickBaseColorAt(x, y, sizePx) {
-    const ix = Math.min(sizePx - 1, Math.max(0, Math.round(x)));
-    const iy = Math.min(sizePx - 1, Math.max(0, Math.round(y)));
-    const pixel = wheelCtx.getImageData(ix, iy, 1, 1).data;
-    return { r: pixel[0], g: pixel[1], b: pixel[2] };
+  function updateShadeSliderGradient() {
+    shadeSlider.style.background =
+      `linear-gradient(to right,
+        black 0%,
+        rgb(${baseColor.r},${baseColor.g},${baseColor.b}) 50%,
+        white 100%)`;
   }
 
-  function positionPreviewBubble() {
-    const min = parseInt(slider.min, 10);
-    const max = parseInt(slider.max, 10);
-    const val = parseInt(slider.value, 10);
-    const t = (val - min) / (max - min);
-
-    // Must match CSS thumb size:
-    const thumbW = 30;
-
-    const sliderW = slider.clientWidth;
-    const x = (thumbW / 2) + t * (sliderW - thumbW);
-    shadePreview.style.left = `${x}px`;
-  }
-
-  function drawSelector(sizePx) {
-    const r = sizePx / 2;
-    const selectorRadius = Math.max(14, Math.round(sizePx * 0.03)); // scales with size
-
-    ctx.beginPath();
-    ctx.arc(selector.x, selector.y, selectorRadius + 4, 0, Math.PI * 2);
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = "white";
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.arc(selector.x, selector.y, selectorRadius, 0, Math.PI * 2);
-    ctx.fillStyle = `rgb(${baseColor.r},${baseColor.g},${baseColor.b})`;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(selector.x, selector.y, selectorRadius, 0, Math.PI * 2);
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "rgba(0,0,0,0.35)";
-    ctx.stroke();
+  function hueSatToCanvasPos(hue, sat, size) {
+    const radius = size / 2;
+    const angle  = (hue - 90) * Math.PI / 180;
+    const dist   = sat * radius;
+    return {
+      x: radius + Math.cos(angle) * dist,
+      y: radius + Math.sin(angle) * dist
+    };
   }
 
   function updateUI() {
-    const shaded = adjustShade(baseColor, parseInt(slider.value, 10));
-    const hex = rgbToHex(shaded.r, shaded.g, shaded.b);
+    const shaded = adjustShade(baseColor, parseInt(shadeSlider.value));
+    const hex    = rgbToHex(shaded.r, shaded.g, shaded.b);
 
-    values.textContent = `HEX: ${hex} | RGB: (${shaded.r}, ${shaded.g}, ${shaded.b})`;
-    shadePreview.style.background = hex;
+    resultSwatch.style.background = hex;
+    values.textContent = `HEX: ${hex}  |  RGB: (${shaded.r}, ${shaded.g}, ${shaded.b})`;
 
-    slider.style.background =
-      `linear-gradient(to right,
-        black,
-        rgb(${baseColor.r},${baseColor.g},${baseColor.b}),
-        white)`;
-
-    positionPreviewBubble();
+    updateShadeSliderGradient();
+    updateSatSliderGradient();
   }
 
-  function render(sizePx) {
-    ctx.clearRect(0, 0, sizePx, sizePx);
+  function render(size) {
+    ctx.clearRect(0, 0, size, size);
     ctx.drawImage(wheelCanvas, 0, 0);
-    drawSelector(sizePx);
+
+    ctx.beginPath();
+    ctx.arc(selector.x, selector.y, 12, 0, Math.PI * 2);
+    ctx.lineWidth   = 4;
+    ctx.strokeStyle = "white";
+    ctx.stroke();
+
     updateUI();
   }
 
-  function getCanvasPos(e, sizePx) {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = sizePx / rect.width;
-    const scaleY = sizePx / rect.height;
-    return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY
-    };
+  function posToHue(x, y, size) {
+    const radius = size / 2;
+    const angle  = Math.atan2(y - radius, x - radius);
+    return ((angle * 180 / Math.PI) + 90 + 360) % 360;
+  }
+
+  function posToSat(x, y, size) {
+    const radius = size / 2;
+    const dx = x - radius, dy = y - radius;
+    return Math.min(1, Math.sqrt(dx*dx + dy*dy) / radius);
+  }
+
+  function pickFromPosition(x, y, size) {
+    currentHue        = posToHue(x, y, size);
+    currentSaturation = posToSat(x, y, size);
+    satSlider.value   = Math.round(currentSaturation * 100);
+    const cx = Math.max(0, Math.min(size-1, Math.round(x)));
+    const cy = Math.max(0, Math.min(size-1, Math.round(y)));
+    const p  = wheelCtx.getImageData(cx, cy, 1, 1).data;
+    baseColor = { r: p[0], g: p[1], b: p[2] };
+  }
+
+  function applySaturation(size) {
+    currentSaturation = parseInt(satSlider.value) / 100;
+    const pos = hueSatToCanvasPos(currentHue, currentSaturation, size);
+    selector  = pos;
+    const cx  = Math.max(0, Math.min(size-1, Math.round(pos.x)));
+    const cy  = Math.max(0, Math.min(size-1, Math.round(pos.y)));
+    const p   = wheelCtx.getImageData(cx, cy, 1, 1).data;
+    baseColor = { r: p[0], g: p[1], b: p[2] };
   }
 
   function init() {
-    const { dpr } = setCanvasResolution();
-    const sizePx = canvas.width; // already includes dpr scaling
+    setCanvasResolution();
+    const size = canvas.width;
+    drawWheel(size);
 
-    drawWheelToOffscreen(sizePx);
+    currentHue        = 239;
+    currentSaturation = 0.85;
+    satSlider.value   = 85;
+    shadeSlider.value = 0;
+    selector          = hueSatToCanvasPos(currentHue, currentSaturation, size);
+    const cx0         = Math.max(0, Math.min(size-1, Math.round(selector.x)));
+    const cy0         = Math.max(0, Math.min(size-1, Math.round(selector.y)));
+    const pixel       = wheelCtx.getImageData(cx0, cy0, 1, 1).data;
+    baseColor         = { r: pixel[0], g: pixel[1], b: pixel[2] };
 
-    // init selector at center
-    selector = { x: sizePx / 2, y: sizePx / 2 };
-    baseColor = pickBaseColorAt(selector.x, selector.y, sizePx);
+    render(size);
 
-    render(sizePx);
-
-    // events
-    function movePointer(e) {
-      const p = getCanvasPos(e, sizePx);
-      selector = clampToWheel(p.x, p.y, sizePx);
-      baseColor = pickBaseColorAt(selector.x, selector.y, sizePx);
-      render(sizePx);
-    }
-
-    canvas.onpointerdown = (e) => {
+    canvas.onpointerdown = e => {
       dragging = true;
-      canvas.setPointerCapture(e.pointerId);
-      movePointer(e);
+      const rect  = canvas.getBoundingClientRect();
+      const scale = size / rect.width;
+      const x = (e.clientX - rect.left) * scale;
+      const y = (e.clientY - rect.top)  * scale;
+      selector = { x, y };
+      pickFromPosition(x, y, size);
+      render(size);
     };
-    canvas.onpointermove = (e) => { if (dragging) movePointer(e); };
-    canvas.onpointerup = (e) => {
-      dragging = false;
-      canvas.releasePointerCapture(e.pointerId);
-    };
-    canvas.onpointercancel = () => dragging = false;
-    canvas.onpointerleave = () => dragging = false;
 
-    slider.oninput = () => render(sizePx);
-    window.onresize = () => {
-      // fully re-init to keep everything consistent on resize/orientation change
-      init();
+    canvas.onpointermove = e => {
+      if (!dragging) return;
+      const rect  = canvas.getBoundingClientRect();
+      const scale = size / rect.width;
+      const x = (e.clientX - rect.left) * scale;
+      const y = (e.clientY - rect.top)  * scale;
+      selector = { x, y };
+      pickFromPosition(x, y, size);
+      render(size);
     };
+
+    canvas.onpointerup = () => dragging = false;
+
+    shadeSlider.oninput = () => render(size);
+    satSlider.oninput   = () => { applySaturation(size); render(size); };
+
+    window.onresize = init;
   }
 
   init();
