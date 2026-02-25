@@ -26,15 +26,10 @@ body{
   font-family:Arial, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   color:var(--text);
   padding:22px;
+  overflow: hidden; /* prevent micro-scroll during slider drag */
 }
 
-.card{
-  width:min(520px, 100%);
-  background:var(--card);
-  border-radius:18px;
-  padding:22px 18px 18px;
-  border:1px solid var(--outline);
-}
+ 
 
 .wheelWrap{
   display:flex;
@@ -83,6 +78,7 @@ canvas{
   outline:none;
   cursor:pointer;
   background:black;
+  touch-action: none; /* prevent page shift while dragging sliders on mobile */
 }
 
 .slider::-webkit-slider-thumb{
@@ -107,7 +103,7 @@ canvas{
 
 <body>
 
-<div class="card">
+<div >
 
   <div class="wheelWrap">
     <canvas id="wheel"></canvas>
@@ -265,8 +261,8 @@ document.addEventListener("DOMContentLoaded", () => {
     ctx.drawImage(wheelCanvas, 0, 0);
 
     ctx.beginPath();
-    ctx.arc(selector.x, selector.y, 12, 0, Math.PI * 2);
-    ctx.lineWidth   = 4;
+    ctx.arc(selector.x, selector.y, 32, 0, Math.PI * 2);
+    ctx.lineWidth   = 6;
     ctx.strokeStyle = "white";
     ctx.stroke();
 
