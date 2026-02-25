@@ -1,0 +1,65 @@
+<div class="cp-wrapper" [class.cp-disabled]="isDisabled()">
+
+  @if (label()) {
+    <label class="cp-label">{{ label() }}</label>
+  }
+
+  <!-- Color wheel -->
+  <div class="cp-wheel-wrap">
+    <canvas
+      #wheelCanvas
+      class="cp-wheel"
+      role="slider"
+      [attr.aria-label]="'Color wheel — hue & saturation'"
+      [attr.aria-disabled]="isDisabled()"
+    ></canvas>
+  </div>
+
+  <!-- Result swatch -->
+  <div
+    class="cp-swatch"
+    role="img"
+    [style.background]="hexValue()"
+    [attr.aria-label]="'Selected color: ' + hexValue()"
+  ></div>
+
+  <!-- Shade slider -->
+  <div class="cp-slider-block">
+    <span class="cp-slider-label">Shade</span>
+    <input
+      type="range"
+      class="cp-slider"
+      [style.background]="shadeSliderBg()"
+      min="-50" max="50"
+      [value]="shade()"
+      [disabled]="isDisabled()"
+      (input)="onShadeChange($event)"
+      aria-label="Shade"
+    />
+  </div>
+
+  <!-- Saturation slider -->
+  <div class="cp-slider-block">
+    <span class="cp-slider-label">Saturation</span>
+    <input
+      type="range"
+      class="cp-slider"
+      [style.background]="satSliderBg()"
+      min="0" max="100"
+      [value]="sat()"
+      [disabled]="isDisabled()"
+      (input)="onSatChange($event)"
+      aria-label="Saturation"
+    />
+  </div>
+
+  <!-- Values display -->
+  <div class="cp-values" aria-live="polite">
+    @if (hexValue(); as hex) {
+      <span class="cp-value-chip">{{ hex }}</span>
+      <span class="cp-value-sep">|</span>
+      <span class="cp-value-chip">RGB ({{ rgbValue() }})</span>
+    }
+  </div>
+
+</div>
